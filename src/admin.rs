@@ -131,6 +131,44 @@ impl<C: ClientContext> AdminClient<C> {
         Ok(rx)
     }
 
+    /// Describe the named groups.
+    pub fn describe_consumer_groups(
+        &self,
+        group_names: &[&str],
+        opts: &AdminOptions,
+    ) -> impl Future<Output = KafkaResult<Vec<GroupResult>>> {
+        match self.describe_consumer_groups_inner(group_names, opts) {
+            Ok(rx) => Either::Left(DescribeConsumerGroupsFuture { rx }),
+            Err(err) => Either::Right(future::err(err)),
+        }
+    }
+
+    fn describe_consumer_groups_inner(
+        &self,
+        group_names: &[&str],
+        opts: &AdminOptions,
+    ) -> KafkaResult<oneshot::Receiver<NativeEvent>> {
+        let mut native_groups = Vec::new();
+        let mut err_buf = ErrBuf::new();
+        for gn in group_names {
+            let gn_t = CString::new(*gn)?;
+            native_groups.push(gn_t.as_ptr());
+        }
+        
+        let (native_opts, rx) = opts.to_native(self.client.native_ptr(), &mut err_buf)?;
+
+        unsafe {
+            rdsys::rd_kafka_DescribeConsumerGroups(
+                self.client.native_ptr(),
+                native_groups.as_mut_ptr(),
+                native_groups.len(),
+                native_opts.ptr(),
+                self.queue.ptr(),
+            )
+        }
+        Ok(rx)
+    }
+
     /// Deletes the named groups.
     pub fn delete_groups(
         &self,
@@ -833,6 +871,22 @@ impl Future for DeleteGroupsFuture {
         let mut n = 0;
         let groups = unsafe { rdsys::rd_kafka_DeleteGroups_result_groups(res, &mut n) };
         Poll::Ready(Ok(build_group_results(groups, n)))
+    }
+}
+
+
+//
+// Describe consumper groups handling
+//
+struct DescribeConsumerGroupsFuture {
+    rx: oneshot::Receiver<NativeEvent>,
+}
+
+impl Future for DescribeConsumerGroupsFuture {
+    type Output = KafkaResult<Vec<GroupResult>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        todo!()
     }
 }
 
