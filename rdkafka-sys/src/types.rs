@@ -92,7 +92,7 @@ pub type RDKafkaTopicResult = bindings::rd_kafka_topic_result_t;
 pub type RDKafkaGroupResult = bindings::rd_kafka_group_result_t;
 
 /// Native rdkafka consumer group result.
-pub type RDKafkaConsumerGroupResult = bindings::rd_kafka_ConsumerGroupDescription_t;
+pub type RDKafkaConsumerGroupDescriptionResult = bindings::rd_kafka_ConsumerGroupDescription_t;
 
 // ENUMS
 

@@ -136,7 +136,7 @@ impl<C: ClientContext> AdminClient<C> {
         &self,
         group_names: &[&str],
         opts: &AdminOptions,
-    ) -> impl Future<Output = KafkaResult<Vec<GroupResult>>> {
+    ) -> impl Future<Output = KafkaResult<Vec<DescribeConsumerGroupResult>>> {
         match self.describe_consumer_groups_inner(group_names, opts) {
             Ok(rx) => Either::Left(DescribeConsumerGroupsFuture { rx }),
             Err(err) => Either::Right(future::err(err)),
@@ -154,7 +154,7 @@ impl<C: ClientContext> AdminClient<C> {
             let gn_t = CString::new(*gn)?;
             native_groups.push(gn_t.as_ptr());
         }
-        
+
         let (native_opts, rx) = opts.to_native(self.client.native_ptr(), &mut err_buf)?;
 
         unsafe {
@@ -660,6 +660,35 @@ fn build_group_results(groups: *const *const RDKafkaGroupResult, n: usize) -> Ve
     out
 }
 
+/// The result of a Describe consumer group operation.
+pub type DescribeConsumerGroupResult = Result<DescribeConsumerGroup, (String, RDKafkaErrorCode)>;
+
+/// Describe consumer group result
+#[derive(Debug)]
+pub struct DescribeConsumerGroup {
+    group_id: String
+}
+
+fn build_describe_group_results(groups: *const *const RDKafkaConsumerGroupDescriptionResult, n: usize) -> Vec<DescribeConsumerGroupResult> {
+    let mut out = Vec::with_capacity(n);
+    // for i in 0..n {
+    //     let group = unsafe { *groups.add(i) };
+    //     let group_id = unsafe { cstr_to_owned(rdsys::rd_kafka_ConsumerGroupDescription_group_id(group)) };
+    //     let err = unsafe {
+    //         let err = rdsys::rd_kafka_ConsumerGroupDescription_error(group);
+    //         rdsys::rd_kafka_error_code(err)
+    //     };
+    //     if err.is_error() {
+    //         out.push(Err((group_id, err.into())));
+    //     } else {
+    //         out.push(Ok(DescribeConsumerGroup {
+    //             group_id
+    //         }));
+    //     }
+    // }
+    out
+}
+
 //
 // Create topic handling
 //
@@ -874,19 +903,30 @@ impl Future for DeleteGroupsFuture {
     }
 }
 
-
 //
-// Describe consumper groups handling
+// Describe consumer groups handling
 //
 struct DescribeConsumerGroupsFuture {
     rx: oneshot::Receiver<NativeEvent>,
 }
 
 impl Future for DescribeConsumerGroupsFuture {
-    type Output = KafkaResult<Vec<GroupResult>>;
+    type Output = KafkaResult<Vec<DescribeConsumerGroupResult>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        todo!()
+        let event = ready!(self.rx.poll_unpin(cx)).map_err(|_| KafkaError::Canceled)?;
+        event.check_error()?;
+        let res = unsafe { rdsys::rd_kafka_event_DescribeConsumerGroups_result(event.ptr()) };
+        if res.is_null() {
+            let typ = unsafe { rdsys::rd_kafka_event_type(event.ptr()) };
+            return Poll::Ready(Err(KafkaError::AdminOpCreation(format!(
+                "describe consumer groups request received response of incorrect type ({})",
+                typ
+            ))));
+        }
+        let mut n = 0;
+        let groups = unsafe { rdsys::rd_kafka_DescribeConsumerGroups_result_groups(res, &mut n) };
+        Poll::Ready(Ok(build_describe_group_results(groups, n)))
     }
 }
 
