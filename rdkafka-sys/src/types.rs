@@ -91,6 +91,9 @@ pub type RDKafkaTopicResult = bindings::rd_kafka_topic_result_t;
 /// Native rdkafka group result.
 pub type RDKafkaGroupResult = bindings::rd_kafka_group_result_t;
 
+/// Native rdkafka consumer group result.
+pub type RDKafkaConsumerGroupDescriptionResult = bindings::rd_kafka_ConsumerGroupDescription_t;
+
 // ENUMS
 
 /// Client types.
